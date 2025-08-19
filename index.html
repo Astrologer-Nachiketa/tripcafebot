@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Training Bot Tripcafe</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            height: 100%;
+            overflow: auto;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .message-box {
+            min-height: 48px;
+            display: none;
+        }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #6366f1;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+
+    <div class="bg-white shadow-xl rounded-lg p-8 w-full max-w-2xl flex flex-col space-y-8">
+        <h1 class="text-3xl font-bold text-center text-gray-800">Training Bot Tripcafe</h1>
+        <p class="text-center text-gray-500">A dynamic knowledge base to help you train new employees with the latest information.</p>
+
+        <div id="admin-login-form" class="space-y-4">
+            <h2 class="text-xl font-medium text-gray-700">Admin Login</h2>
+            <input type="text" id="admin-username" placeholder="Username" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition duration-200">
+            <input type="password" id="admin-password" placeholder="Password" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition duration-200">
+            <button id="login-btn" class="w-full px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition duration-200">
+                Log In
+            </button>
+            <div id="login-message" class="message-box p-3 rounded-lg text-sm transition-all duration-300"></div>
+        </div>
+
+        <div id="admin-controls" class="space-y-4 hidden">
+            <h2 class="text-xl font-medium text-gray-700">1. Add New Knowledge</h2>
+            <textarea id="document-text" rows="8" placeholder="Paste your new text or knowledge here to add it to the database. This will not delete previous information." class="w-full p-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition duration-200"></textarea>
+            <button id="index-btn" class="w-full px-6 py-3 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition duration-200">
+                Index Document
+            </button>
+        </div>
+
+        <div class="space-y-4">
+            <h2 class="text-xl font-medium text-gray-700">2. Ask a Question</h2>
+            <input type="text" id="query-input" placeholder="Type your question here to query the knowledge base..." class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition duration-200">
+            <button id="query-btn" class="w-full px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-200">
+                Ask
+            </button>
+            
+            <div id="loading-indicator" class="flex justify-center items-center mt-4 hidden">
+                <div class="spinner"></div>
+            </div>
+            <div id="message-box" class="message-box p-4 rounded-lg text-sm bg-gray-200 text-gray-700"></div>
+
+            <div id="answer-box" class="p-4 bg-gray-50 rounded-lg border border-gray-200 min-h-[100px]">
+                <p id="answer-text" class="text-gray-800 leading-relaxed"></p>
+                <div id="source-dates" class="text-xs text-gray-400 mt-4 border-t pt-2 hidden"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        // DOM element references
+        const documentTextarea = document.getElementById('document-text');
+        const indexBtn = document.getElementById('index-btn');
+        const queryInput = document.getElementById('query-input');
+        const queryBtn = document.getElementById('query-btn');
+        const answerText = document.getElementById('answer-text');
+        const sourceDates = document.getElementById('source-dates');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const messageBox = document.getElementById('message-box');
+
+        // New Admin Login DOM elements
+        const adminLoginForm = document.getElementById('admin-login-form');
+        const adminControls = document.getElementById('admin-controls');
+        const adminUsernameInput = document.getElementById('admin-username');
+        const adminPasswordInput = document.getElementById('admin-password');
+        const loginBtn = document.getElementById('login-btn');
+        const loginMessage = document.getElementById('login-message');
+
+
+        // Hardcoded Supabase & Gemini Credentials
+        const SUPABASE_URL = "https://ppxmkrxhgcpkzkgsmdna.supabase.co";
+        const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBweG1rcnhoZ2Nwa3prZ3NtZG5hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUzMzI2MTMsImV4cCI6MjA3MDkwODYxM30.-VGJY8W1XBigmVzcLy-Cout0sbTUmJ-hTlW8amp_ubM";
+        const GEMINI_API_KEY = "AIzaSyBD0K0l6AW1v-pDW6lnnZu-5UeeMoQuwHA";
+        
+        let supabase = null;
+        let isIndexing = false;
+        let isQuerying = false;
+
+        // Helper function to display temporary messages
+        const showMessage = (message, isError = false, targetBox = messageBox) => {
+            console.log(`[UI Message] ${isError ? 'ERROR' : 'SUCCESS'}: ${message}`);
+            targetBox.textContent = message;
+            targetBox.className = `p-3 rounded-lg text-sm transition-all duration-300 ${isError ? 'bg-red-200 text-red-800' : 'bg-green-200 text-green-800'}`;
+            targetBox.style.display = 'block';
+            setTimeout(() => {
+                targetBox.style.display = 'none';
+            }, 5000);
+        };
+
+        // Helper function to manage loading state
+        const setLoading = (isLoading) => {
+            loadingIndicator.style.display = isLoading ? 'flex' : 'none';
+            indexBtn.disabled = isLoading;
+            queryBtn.disabled = isLoading;
+        };
+        
+        // Initialize the Supabase client when the page loads
+        const initializeSupabase = () => {
+            try {
+                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                console.log("[INIT] Supabase client initialized successfully.");
+            } catch (e) {
+                console.error("[INIT ERROR] Failed to initialize Supabase client.", e);
+                showMessage("Failed to initialize Supabase. Check your URL and Key.", true);
+            }
+        };
+
+        window.addEventListener('load', () => {
+            initializeSupabase();
+        });
+
+        // Event listener for the Admin Login button
+        loginBtn.addEventListener('click', () => {
+            const username = adminUsernameInput.value.trim();
+            const password = adminPasswordInput.value.trim();
+
+            if (username === 'admin' && password === '123') {
+                adminLoginForm.classList.add('hidden');
+                adminControls.classList.remove('hidden');
+                showMessage('Login successful!', false, loginMessage);
+            } else {
+                showMessage('Invalid username or password.', true, loginMessage);
+            }
+        });
+
+        // Event listener for the Index Document button
+        indexBtn.addEventListener('click', async () => {
+            if (!supabase || isIndexing) return;
+            const documentText = documentTextarea.value.trim();
+            if (documentText.length < 50) {
+                showMessage("Please enter a document to index (min. 50 characters).", true);
+                return;
+            }
+
+            setLoading(true);
+            try {
+                const chunks = chunkDocument(documentText);
+                await indexDocument(chunks);
+                showMessage("Document indexed successfully!");
+                documentTextarea.value = '';
+            } catch (error) {
+                console.error("[INDEXING ERROR] Indexing failed:", error);
+                showMessage(`Indexing failed: ${error.message}`, true);
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        // Event listener for the Ask button
+        queryBtn.addEventListener('click', async () => {
+            if (!supabase || isQuerying) return;
+            const queryText = queryInput.value.trim();
+            if (!queryText) {
+                showMessage("Please enter a question.", true);
+                return;
+            }
+            
+            setLoading(true);
+            answerText.textContent = '';
+            sourceDates.textContent = '';
+            sourceDates.style.display = 'none';
+            try {
+                const { answer, dates } = await getAnswer(queryText);
+                answerText.textContent = answer;
+                if (dates.length > 0) {
+                    sourceDates.textContent = 'Source dates: ' + dates.join(', ');
+                    sourceDates.style.display = 'block';
+                }
+            } catch (error) {
+                console.error("[QUERYING ERROR] Query failed:", error);
+                answerText.textContent = `An error occurred: ${error.message}`;
+                showMessage(`An error occurred: ${error.message}`, true);
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        // --- Core Functions ---
+
+        /**
+         * Chunks a large text document into smaller, manageable pieces based on sentence boundaries.
+         * @param {string} text - The full text to be chunked.
+         * @returns {string[]} An array of text chunks.
+         */
+        const chunkDocument = (text) => {
+            const sentences = text.split(/(?<=[.!?])\s+/);
+            const chunks = [];
+            let currentChunk = '';
+            const maxChunkSize = 500;
+            console.log("[CHUNKING] Starting to chunk document...");
+            for (const sentence of sentences) {
+                if (currentChunk.length + sentence.length > maxChunkSize) {
+                    chunks.push(currentChunk.trim());
+                    currentChunk = sentence + ' ';
+                } else {
+                    currentChunk += sentence + ' ';
+                }
+            }
+            if (currentChunk.length > 0) {
+                chunks.push(currentChunk.trim());
+            }
+            console.log(`[CHUNKING] Finished. Created ${chunks.length} chunks.`);
+            return chunks;
+        };
+
+        /**
+         * Fetches a vector embedding for a given text using the Gemini API.
+         * @param {string} text - The text to embed.
+         * @returns {number[] | null} The embedding vector or null if an error occurs.
+         */
+        const getEmbedding = async (text) => {
+            console.log(`[EMBEDDING] Attempting to get embedding for text: "${text.substring(0, 30)}..."`);
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/embedding-001:embedContent?key=${GEMINI_API_KEY}`;
+            
+            const payload = {
+                model: "models/embedding-001",
+                content: { parts: [{ text: text }] }
+            };
+            
+            try {
+                const response = await fetchWithBackoff(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const errorBody = await response.text();
+                    console.error("[EMBEDDING ERROR] API call for embedding failed.", { status: response.status, body: errorBody });
+                    throw new Error(`API call for embedding failed: ${response.status} - ${errorBody}`);
+                }
+
+                const result = await response.json();
+                const embedding = result?.embedding?.values;
+                if (embedding) {
+                    console.log("[EMBEDDING] Embedding received successfully.");
+                    return embedding;
+                } else {
+                    console.error("[EMBEDDING ERROR] Gemini response was missing the embedding values.", result);
+                    throw new Error("Failed to get embedding from API response.");
+                }
+            } catch (error) {
+                console.error("[EMBEDDING ERROR] Caught error during getEmbedding:", error);
+                throw error;
+            }
+        };
+
+        /**
+         * Indexes an array of text chunks into the Supabase database.
+         * @param {string[]} chunks - An array of text chunks.
+         */
+        const indexDocument = async (chunks) => {
+            isIndexing = true;
+            console.log("[INDEXING] Starting document indexing process.");
+            for (const chunk of chunks) {
+                try {
+                    const embedding = await getEmbedding(chunk);
+                    if (embedding) {
+                        const embeddingString = `[${embedding.join(',')}]`;
+                        console.log(`[INDEXING] Inserting chunk to Supabase. Chunk: "${chunk.substring(0, 30)}..."`);
+                        const { error } = await supabase
+                            .from('documents')
+                            .insert({
+                                content: chunk,
+                                embedding: embeddingString,
+                            });
+
+                        if (error) {
+                            console.error("[SUPABASE INDEX ERROR] Supabase insert error:", error);
+                            throw new Error(`Supabase insertion failed: ${error.message}`);
+                        }
+                        console.log("[INDEXING] Chunk successfully inserted.");
+                    }
+                } catch (e) {
+                    console.error("[INDEXING ERROR] Failed to index a chunk:", e);
+                    throw e; // Re-throw to stop the process
+                }
+            }
+            console.log("[INDEXING] Document indexing process completed.");
+            isIndexing = false;
+        };
+
+        /**
+         * The core function to get an answer based on a user's query.
+         * @param {string} queryText - The user's question.
+         * @returns {object} An object containing the generated answer and source dates.
+         */
+        const getAnswer = async (queryText) => {
+            isQuerying = true;
+            console.log(`[QUERY] Starting answer generation for query: "${queryText}"`);
+            try {
+                const queryEmbedding = await getEmbedding(queryText);
+                if (!queryEmbedding) {
+                    console.error("[QUERY] getEmbedding returned no data.");
+                    throw new Error("Failed to get embedding for query.");
+                }
+                console.log("[QUERY] Query embedding generated successfully.");
+
+                const queryEmbeddingString = `[${queryEmbedding.join(',')}]`;
+                console.log(`[SEARCH] Sending query embedding to Supabase: ${queryEmbeddingString.substring(0, 50)}...`);
+
+                const { data, error } = await supabase.rpc('match_documents', {
+                    query_embedding: queryEmbeddingString,
+                    match_threshold: 0.5, // Lowered threshold for better results
+                    match_count: 5
+                });
+
+                if (error) {
+                    console.error("[SEARCH ERROR] Supabase search error:", error);
+                    throw new Error(`Supabase search error: ${error.message}`);
+                }
+                
+                console.log(`[SEARCH] Retrieved ${data ? data.length : 0} documents from Supabase.`, data);
+
+                let context = '';
+                let dates = [];
+
+                if (data && data.length > 0) {
+                    context = data.map(d => d.content).join('\n---\n');
+                    dates = [...new Set(data.map(d => new Date(d.created_at).toLocaleDateString()))];
+                    console.log(`[CONTEXT] Context assembled. Context length: ${context.length}`);
+                } else {
+                    console.warn("[CONTEXT] No relevant documents found in search.");
+                    return { answer: "The knowledge base did not contain relevant information for this query. Try adding some documents first!", dates: [] };
+                }
+                
+                let prompt = `Based strictly on the following context, answer the question. If the information is not in the context, say you don't know.\n\nContext:\n${context}\n\nQuestion: ${queryText}`;
+                
+                console.log("[PROMPT] Prompt being sent to Gemini:", prompt);
+
+                const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
+                
+                const response = await fetchWithBackoff(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!response.ok) {
+                    const errorBody = await response.text();
+                    console.error("[GEMINI ERROR] API call failed.", { status: response.status, body: errorBody });
+                    throw new Error(`API call failed: ${response.status} - ${errorBody}`);
+                }
+
+                const result = await response.json();
+                const answer = result?.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
+                console.log("[ANSWER] Answer received from Gemini:", answer);
+                return { answer, dates };
+
+            } catch (error) {
+                console.error("[QUERY ERROR] Error during answer generation:", error);
+                throw error;
+            } finally {
+                isQuerying = false;
+            }
+        };
+
+        /**
+         * A utility function to fetch with exponential backoff for handling rate limiting.
+         */
+        const fetchWithBackoff = async (url, options, retries = 5, delay = 1000) => {
+            try {
+                const response = await fetch(url, options);
+                if (!response.ok && response.status === 429 && retries > 0) {
+                    console.warn(`[FETCH] Rate limited. Retrying in ${delay}ms...`);
+                    await new Promise(res => setTimeout(res, delay));
+                    return fetchWithBackoff(url, options, retries - 1, delay * 2);
+                }
+                if (!response.ok && retries > 0) {
+                    console.warn(`[FETCH] Non-ok response (${response.status}). Retrying in ${delay}ms...`);
+                    await new Promise(res => setTimeout(res, delay));
+                    return fetchWithBackoff(url, options, retries - 1, delay * 2);
+                }
+                return response;
+            } catch (error) {
+                if (retries > 0) {
+                    console.warn(`[FETCH] Fetch failed. Retrying in ${delay}ms...`, error);
+                    await new Promise(res => setTimeout(res, delay));
+                    return fetchWithBackoff(url, options, retries - 1, delay * 2);
+                }
+                console.error("[FETCH ERROR] All retries failed.", error);
+                throw error;
+            }
+        };
+
+    </script>
+</body>
+</html>
