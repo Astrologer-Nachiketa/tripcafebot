@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -81,6 +82,59 @@
             font-size: clamp(0.75em, 3vw, 0.8em);
             color: #555;
             font-weight: 500;
+        }
+
+        .search-container {
+            padding: 0 20px 10px 20px;
+            background: #fff;
+            border-bottom: 1px solid var(--border-color);
+            position: relative;
+        }
+        
+        .search-box {
+            width: 100%;
+            padding: 12px 45px 12px 15px;
+            border: 2px solid var(--border-color);
+            border-radius: 25px;
+            font-size: clamp(0.9em, 3vw, 0.95em);
+            font-family: 'Roboto', sans-serif;
+            transition: border-color 0.2s;
+        }
+        
+        .search-box:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+        
+        .search-box::placeholder {
+            color: #999;
+        }
+        
+        .clear-search {
+            position: absolute;
+            right: 35px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #ddd;
+            border: none;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2em;
+            color: #666;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .clear-search.visible {
+            display: flex;
+        }
+        
+        .clear-search:active {
+            transform: translateY(-50%) scale(0.9);
         }
 
         .loading-message {
@@ -651,6 +705,10 @@
             <header class="header">
                 <h1>Our Menu <span id="table-number-display"></span></h1>
             </header>
+            <div class="search-container">
+                <input type="text" class="search-box" id="search-input" placeholder="Search for items...">
+                <button class="clear-search" id="clear-search">&times;</button>
+            </div>
             <div class="menu-container">
                 <aside class="category-list"><ul id="category-list-ul"></ul></aside>
                 <main class="item-list" id="item-list-main">
@@ -714,12 +772,15 @@
         let appliedDiscount = null;
         let userLocation = null;
         let outletOpen = true;
+        let searchQuery = '';
         
         const categoryListUl = document.getElementById('category-list-ul');
         const itemListMain = document.getElementById('item-list-main');
         const cartSummaryBar = document.getElementById('cart-summary-bar');
         const cartItemCountSpan = document.getElementById('cart-item-count');
         const cartTotalPriceSpan = document.getElementById('cart-total-price');
+        const searchInput = document.getElementById('search-input');
+        const clearSearchBtn = document.getElementById('clear-search');
         
         const custModalOverlay = document.getElementById('customization-modal-overlay');
         const custModalContent = document.getElementById('customization-modal-content');
@@ -1040,9 +1101,30 @@
             return '';
         }
 
+        function getFilteredItems() {
+            if (!searchQuery) return menuItems;
+            
+            const query = searchQuery.toLowerCase();
+            return menuItems.filter(item => {
+                return item.Name.toLowerCase().includes(query) ||
+                       item.Category.toLowerCase().includes(query);
+            });
+        }
+
         function renderCategories() {
-            const categories = [...new Set(menuItems.map(item => item.Category))];
+            const filteredItems = getFilteredItems();
+            
+            // Get unique categories from filtered items
+            const categories = [...new Set(filteredItems.map(item => item.Category))];
+            
             categoryListUl.innerHTML = '';
+            
+            if (categories.length === 0 && searchQuery) {
+                categoryListUl.innerHTML = '<li style="padding: 15px 10px; color: #999; font-size: 0.85em; text-align: center;">No matches</li>';
+                itemListMain.innerHTML = '<p style="padding: 40px 20px; text-align: center; color: #999;">No items found matching your search</p>';
+                return;
+            }
+            
             categories.forEach(category => {
                 const li = document.createElement('li');
                 li.textContent = category;
@@ -1055,14 +1137,21 @@
                 });
                 categoryListUl.appendChild(li);
             });
-            if (categoryListUl.firstChild) {
+            
+            if (categoryListUl.firstChild && categoryListUl.firstChild.tagName === 'LI') {
                 categoryListUl.firstChild.click();
             }
         }
 
         function renderItems(category) {
             itemListMain.innerHTML = '';
-            const itemsInCategory = menuItems.filter(item => item.Category === category);
+            const filteredItems = getFilteredItems();
+            const itemsInCategory = filteredItems.filter(item => item.Category === category);
+            
+            if (itemsInCategory.length === 0) {
+                itemListMain.innerHTML = '<p style="padding: 40px 20px; text-align: center; color: #999;">No items found in this category</p>';
+                return;
+            }
             
             itemsInCategory.forEach(item => {
                 const itemInCart = cart.find(cartItem => cartItem.Name === item.Name && !cartItem.selectedAddons.length && !cartItem.instructions);
